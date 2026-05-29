@@ -1,0 +1,39 @@
+---
+- hosts:
+    - all
+  any_errors_fatal: false
+  gather_timeout: 30
+  strategy: free
+  ignore_unreachable: true
+  become: true
+
+  tasks:
+
+    - block:
+
+        - include_role:
+            name: elastic-apache-info
+          when: |
+            product == "apache"
+            or
+            product == "csa_imported_apache_dmzi_emea"
+            or
+            product == "CSA_IMPORTED_apache_dmzi_emea"
+            or
+            product == "csa_imported_apache_dmzi"
+            or
+            product == "dpi_upgraded_apache"
+            or
+            product == "apache_wsgi"
+            or
+            product == "apache_dmzi"
+            or
+            product == "apache_dmzi_emea"
+            or
+            product == "apache_dmzi_apac"
+            or
+            product == "apache_dmzi_amer"
+            or
+            product == "apache_ibm"
+            or
+            product == "apache_ibmcloud_vpc"

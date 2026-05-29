@@ -1,0 +1,34 @@
+---
+- name: Starting block for sync_inventory_source
+  block:
+
+    - name: Trigger inventory source update
+      uri:
+        url: "{{ ansible_url }}/inventory_sources/{{ inventory_source_id }}/update/"
+        method: POST
+        status_code: [202, 200, 201]
+        headers:
+          Accept: application/json
+          Authorization: "Bearer {{ svc_token }}"
+        validate_certs: false
+        body_format: json
+        body: {}
+      register: src_update
+
+    - name: Wait for inventory source sync to finish
+      uri:
+        url: "{{ ansible_url }}/inventory_sources/{{ inventory_source_id }}/"
+        method: GET
+        headers:
+          Accept: application/json
+          Authorization: "Bearer {{ svc_token }}"
+        validate_certs: false
+      register: src_status
+      until: (src_status.json.summary_fields.last_update.status | default('')) in ['successful', 'failed', 'error', 'canceled']
+      retries: 60
+      delay: 5
+
+    - name: Fail if inventory source sync failed
+      fail:
+        msg: "Inventory source sync failed: {{ src_status.json.summary_fields.last_update.status }}"
+      when: (src_status.json.summary_fields.last_update.status | default('')) != 'successful'

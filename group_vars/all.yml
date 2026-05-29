@@ -1,0 +1,16 @@
+---
+dpr_base_url: "https://dpr-backend.group.echonet/export/dynamic/pamela_server?"
+dpr_query: |
+  "filter=HOST_ID%3A{{ inventory_hostname_short | upper }}&fields=APPLICATION_NAME_VALUE%2CHOST_ID%2CAPPLICATION_BAM_VALUE%2CAPPLICATION_AUID_VALUE&format=json"
+
+opensearch_host: "https://vs-avi-lab-mdw-elk-platform-es-prd.xmp.net.intra"
+opensearch_index: "{{ data_env }}-middleware-products"
+opensearch_path: "_update_by_query"
+opensearch_qs: "pretty&refresh"
+opensearch_url: "{{ opensearch_host }}/{{ opensearch_index }}/{{ opensearch_path }}?{{ opensearch_qs }}"
+
+delete_by_query: "_delete_by_query?conflicts=proceed&refresh=true&wait_for_completion=true"
+
+itsm_url_base: "https://api-platform.cib.echonet/itsmendpoint/ITSM/Middleware/Application?name="
+
+itsm_relationship_url: "https://api-platform.cib.echonet/itsmendpoint/ITSM/Middleware/Application/RelationShip/Server"

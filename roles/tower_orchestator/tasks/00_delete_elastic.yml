@@ -1,0 +1,25 @@
+---
+- name: Delete previous docs in OpenSearch for this scope
+  ansible.builtin.uri:
+    url: "{{ opensearch_host }}/{{ opensearch_index }}/_delete_by_query?conflicts=proceed&refresh=true&wait_for_completion=true"
+    validate_certs: false
+    method: POST
+    url_username: "{{ mdlw_elastic_user }}"
+    url_password: "{{ mdlw_elastic_password }}"
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      query:
+        bool:
+          must:
+            - term: { Product_dpi: "{{ (product | mandatory | trim ) }}" }
+            - term: { Zone: "{{ opensearch_zone | default('IV2') }}" }
+            - term: { Region: "{{ (region | mandatory | upper | trim ) }}" }
+            - term: { Environment: "{{ (envs | mandatory | upper | trim ) }}" }
+            - term: { Location_zone: "{{ (location_zone | mandatory | upper | trim ) }}" }
+  register: removal_elk
+
+- name: Print delete summary
+  debug:
+    msg: "{{ removal_elk.status }}"

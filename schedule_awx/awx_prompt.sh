@@ -7,7 +7,9 @@
 #                 -l csa_imported_jbosseap_emea_dev_core \
 #                 -u update -g MiddlewareFR -d prod -t false
 #
-# If any option is omitted the script will ask for it interactively.
+# Automation mode:
+#   Values must be passed by the scheduler from templates/*.list.
+#   The limit must come from column 4 and is sent unchanged to Tower.
 # Additional modes:
 #   ./awx_prompt.sh --help                 -> help + product table
 #   ./awx_prompt.sh --help <product>       -> help (no table) + limits of <
@@ -302,7 +304,8 @@ Options (both long and short forms):
 -d, --data_env <DATA_ENV>     prod | dev
 -t, --is_ETS <true|false>     false | true
 
-If any option is omitted the script will ask for it interactively.
+Automation mode does not prompt interactively.
+Values must come from templates/*.list.
 All arguments are case-insensitive.
 EOF
     if [[ $show_table == yes ]]; then
@@ -540,6 +543,7 @@ declare -A PRODUCT_CANONICAL=(
     [iis]=iis_all_windows_version
     [tomcat]=tomcat
     [jbossews]=jboss_ews
+    [jboss_ews]=jboss_ews
     [weblogic]=weblogic
     [was]=websphere_base
 )

@@ -1,103 +1,75 @@
 ---
-- name: Normalize inputs received from awx_prompt.sh
+- name: Normalize survey inputs parsed via AWX cli
   set_fact:
-    region_norm: "{{ region | mandatory | upper | trim }}"
-    env_norm: "{{ envs | mandatory | upper | trim }}"
-    product_norm: "{{ product | mandatory | lower | trim }}"
-    product_family_input: "{{ product_family | default('') | lower | trim }}"
-    launch_limit: "{{ limit | mandatory | lower | trim }}"
-    update: "{{ update | default('update') | lower | trim }}"
-    instance_group_requested: "{{ instance_group | default('none') | trim }}"
-    data_env: "{{ data_env | default('prod') | trim }}"
-    is_ETS: "{{ is_ETS | default('false') | lower | trim }}"
-    location_zone: "{{ location_zone | default('') | upper | trim }}"
-    list_file: "{{ list_file | default('') | trim }}"
+    region_norm: "{{ (region | mandatory | upper | trim) }}"
+    env_norm: "{{ (envs | mandatory | upper | trim) }}"
+    product_norm: "{{ (product | mandatory | lower | trim) }}"
+    update: "{{ (update | mandatory | lower | trim) }}"
+    instance_group: "{{ (instance_group | mandatory | trim) }}"
+    data_env: "{{ (data_env | mandatory | trim) }}"
+    is_ETS: "{{ (is_ETS | mandatory | trim) }}"
+    location_zone: "{{ (location_zone | default('') | lower | trim) }}"
+    limit_defined: "{{ (limit | mandatory | lower | trim) }}"
 
-- name: Validate that launch_limit is safe and explicit
+- name: Validate received limit
   assert:
     that:
-      - launch_limit | length > 0
-      - "' ' not in launch_limit"
-      - "',' not in launch_limit"
-      - launch_limit != 'all'
-      - launch_limit != '*'
-    fail_msg: "Unsafe or empty limit '{{ launch_limit }}'. Refusing to create a job that could run against the whole inventory."
+      - limit_defined is defined
+      - limit_defined | length > 0
+      - "' ' not in limit_defined"
+      - "',' not in limit_defined"
+    fail_msg: >-
+      Invalid empty or multiple limit received.
+      product={{ product_norm }},
+      region={{ region_norm }},
+      env={{ env_norm }},
+      location_zone={{ location_zone }},
+      limit={{ limit_defined | default('UNDEFINED') }}
 
-- name: Derive product family when not supplied by awx_prompt.sh
+- name: Debug - final received limit from list file
+  debug:
+    msg: "Final AWX launch limit received from .list: {{ limit_defined }}"
+
+- name: Derive product family from product string
   set_fact:
     product_family: >-
-      {% if product_family_input | length > 0 %}{{ product_family_input }}
-      {% elif 'tomcat' in product_norm or 'jboss_ews' in product_norm %}tomcat
-      {% elif 'weblogic' in product_norm %}weblogic
-      {% elif 'jbosseap' in product_norm %}jbosseap
-      {% elif 'sso' in product_norm %}sso
-      {% elif 'apache' in product_norm %}apache
-      {% elif 'iis' in product_norm %}iis
-      {% elif 'was' in product_norm or 'websphere' in product_norm %}websphere
+      {% set p = product_norm %}
+      {% if 'tomcat' in p %}tomcat
+      {% elif 'weblogic' in p %}weblogic
+      {% elif 'jboss_ews' in p %}jboss_ews
+      {% elif 'jbosseap' in p %}jbosseap
+      {% elif 'sso' in p %}sso
+      {% elif 'apache' in p %}apache
+      {% elif 'iis' in p %}iis
+      {% elif 'was' in p or 'websphere' in p %}was
       {% else %}UNKNOWN{% endif %}
 
-- name: Normalize product family
+- name: Normalize product_family
   set_fact:
-    product_family: "{{ product_family | trim | lower }}"
+    product_family: "{{ product_family | trim }}"
 
-- name: Define built-in product map fallback
-  set_fact:
-    builtin_product_map:
-      apache:
-        playbook: "elastic-iv2-apache.yml"
-        ini: "inventories/apache.ini"
-      tomcat:
-        playbook: "elastic-iv2-tomcat.yml"
-        ini: "inventories/tomcat.ini"
-      jboss_ews:
-        playbook: "elastic-iv2-tomcat.yml"
-        ini: "inventories/tomcat.ini"
-      jbosseap:
-        playbook: "elastic-iv2-jbosseap.yml"
-        ini: "inventories/jbosseap.ini"
-      sso:
-        playbook: "elastic-iv2-sso.yml"
-        ini: "inventories/apache_sso.ini"
-      iis:
-        playbook: "elastic-iv2-iis.yml"
-        ini: "inventories/iis.ini"
-      was:
-        playbook: "elastic-iv2-was.yml"
-        ini: "inventories/was.ini"
-      websphere:
-        playbook: "elastic-iv2-was.yml"
-        ini: "inventories/was.ini"
-      weblogic:
-        playbook: "elastic-iv2-weblogic.yml"
-        ini: "inventories/weblogic.ini"
-
-- name: Merge role product_map over built-in product map
-  set_fact:
-    effective_product_map: "{{ builtin_product_map | combine(product_map | default({}), recursive=True) }}"
-
-- name: Validate product family
+- name: Abort if product family could not be detected
   assert:
     that:
       - product_family != 'UNKNOWN'
-      - product_family in effective_product_map
-    fail_msg: "Unable to determine product family from product='{{ product_norm }}', product_family='{{ product_family }}', list_file='{{ list_file }}'."
+      - product_family in product_map
+    fail_msg: "Unable to determine product family from '{{ product_norm }}' product_family='{{ product_family }}'"
 
-- name: Select playbook and inventory source path
+- name: Select playbook + inventory source path
   set_fact:
-    playbook_path: "{{ effective_product_map[product_family].playbook }}"
-    ini_source_path: "{{ effective_product_map[product_family].ini }}"
+    playbook_path: "{{ product_map[product_family].playbook }}"
+    ini_source_path: "{{ product_map[product_family].ini }}"
 
-- name: Derive zone override from the selected limit/location_zone
+- name: Derive zone override from final limit
   set_fact:
     zone_override: >-
-      {% set z = location_zone | lower %}
-      {% set l = launch_limit | lower %}
-      {% if z in ['dmz', 'dmzi'] or '_dmz' in l or 'dmzi' in l %}dmz
-      {% elif z == 'ets' or '_ets' in l %}ets
-      {% elif z == 'lbi' or '_lbi' in l %}lbi
+      {% set p = limit_defined %}
+      {% if ('_lbi' in p) or ('lbi' in p) %}lbi
+      {% elif ('_ets' in p) or ('ets' in p) %}ets
+      {% elif ('_dmz' in p) or ('dmzi' in p) %}dmz
       {% else %}none{% endif %}
 
-- name: Normalize zone override
+- name: Normalize zone_override
   set_fact:
     zone_override: "{{ zone_override | trim | lower }}"
 
@@ -106,7 +78,7 @@
     that:
       - region_norm in region_credentials
       - zone_override == 'none' or zone_override in zone_credentials
-    fail_msg: "Invalid credential mapping for region='{{ region_norm }}', zone_override='{{ zone_override }}'."
+    fail_msg: "Invalid region_norm='{{ region_norm }}' or zone_override='{{ zone_override }}'"
 
 - name: Select credential id
   set_fact:
@@ -119,33 +91,28 @@
         ) | int
       }}
 
-- name: Normalize requested instance group from .list
+- name: Normalize instance_group override
+  set_fact:
+    instance_group_name_override: "{{ (instance_group | default('')) | trim }}"
+
+- name: Select instance_group_name_final
   set_fact:
     instance_group_name_final: >-
-      {% set ig = instance_group_requested | trim %}
-      {% if ig | lower in ['', 'none', 'null'] %}MiddlewareFR
-      {% else %}{{ ig }}{% endif %}
+      {{
+        region_instance_groups[region_norm] | default('MiddlewareFR')
+        if instance_group_name_override | lower == 'none'
+        else instance_group_name_override
+      }}
 
-- name: Normalize final instance group
-  set_fact:
-    instance_group_name_final: "{{ instance_group_name_final | trim }}"
-
-- name: Validate instance group name
-  assert:
-    that:
-      - instance_group_name_final in instance_group_name_to_id
-    fail_msg: "Unknown instance_group '{{ instance_group_name_final }}' from list row."
-
-- name: Resolve instance group id
+- name: Resolve instance_group_id from final name
   set_fact:
     instance_group_id: "{{ instance_group_name_to_id[instance_group_name_final] }}"
+  when: instance_group_name_final is not none
 
-- name: Show selected execution target
+- name: Set launch limit to received list limit
+  set_fact:
+    launch_limit: "{{ limit_defined }}"
+
+- name: Debug - launch limit used by Tower job template
   debug:
-    msg:
-      - "product_family={{ product_family }}"
-      - "inventory={{ ini_source_path }}"
-      - "playbook={{ playbook_path }}"
-      - "launch_limit={{ launch_limit }}"
-      - "instance_group={{ instance_group_name_final }}"
-      - "credential={{ cred_id }}"
+    msg: "Tower job template will be launched with limit={{ launch_limit }}"

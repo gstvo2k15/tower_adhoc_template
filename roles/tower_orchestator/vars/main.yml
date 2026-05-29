@@ -1,0 +1,71 @@
+---
+### Newest vars
+organization_id: 6
+project_id: 3553
+project_branch: "develop"
+
+region_credentials:
+  EMEA: 21
+  AMER: 26
+  APAC: 30
+
+zone_credentials:
+  dmz: 24
+  lbi: 146
+  ets: 146
+
+region_instance_groups:
+  EMEA: null
+  AMER: "iv2amer"
+  APAC: "iv2apac"
+
+instance_group_name_to_id:
+  iv2amer: 6
+  iv2apac: 7
+  MiddlewareFR: null
+
+product_map:
+  apache:
+    playbook: "elastic-iv2-apache.yml"
+    ini: "inventories/apache.ini"
+
+  iis:
+    playbook: "elastic-iv2-iis.yml"
+    ini: "inventories/iis.ini"
+
+  jbosseap:
+    playbook: "elastic-iv2-jbosseap.yml"
+    ini: "inventories/jbosseap.ini"
+
+jboss_ews:
+  playbook: "elastic-iv2-tomcat.yml"
+  ini: "inventories/jbossews.ini"
+
+sso:
+  playbook: "elastic-iv2-sso.yml"
+  ini: "inventories/apache_sso.ini"
+
+tomcat:
+  playbook: "elastic-iv2-tomcat.yml"
+  ini: "inventories/tomcat.ini"
+
+was:
+  playbook: "elastic-iv2-was.yml"
+  ini: "inventories/was.ini"
+
+weblogic:
+  playbook: "elastic-iv2-weblogic.yml"
+  ini: "inventories/weblogic.ini"
+
+execution_environment_id: 2
+
+opensearch_zone: "IV2"
+
+double_region_products:
+  - csa_imported_apache_dmzi
+  - apache_dmzi_apac
+  - apache_dmzi_amer
+
+# 600 x 30 s = 5 h
+max_retries: 600
+delay_seconds: 30

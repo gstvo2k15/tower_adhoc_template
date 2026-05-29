@@ -1,0 +1,38 @@
+---
+- name: Launch adhoc template
+  uri:
+    url: "{{ ansible_url }}/job_templates/{{ adhoc_template_id }}/launch/"
+    method: POST
+    status_code: [200, 201]
+    headers:
+      Accept: application/json
+      Authorization: "Bearer {{ svc_token }}"
+    validate_certs: false
+    body_format: json
+    body:
+      limit: "{{ launch_limit }}"
+      verbosity: 3
+  register: launch_result
+
+- name: Get details of the launched job
+  uri:
+    url: "{{ ansible_url }}/jobs/{{ launch_result.json.job }}/"
+    method: GET
+    headers:
+      Accept: application/json
+      Authorization: "Bearer {{ svc_token }}"
+    validate_certs: false
+  register: job_info
+  until: job_info.json.status in ['successful', 'failed', 'error', 'canceled']
+  retries: "{{ max_retries }}"
+  delay: "{{ delay_seconds }}"
+
+- name: Print job summary
+  debug:
+    msg:
+      - "Job ID    : {{ job_info.json.id }}"
+      - "Name      : {{ job_info.json.name }}"
+      - "Status    : {{ job_info.json.status }}"
+      - "Created   : {{ job_info.json.created }}"
+      - "Finished  : {{ job_info.json.finished | default('still running') }}"
+      - "Result    : {{ job_info.json.result | default('N/A') }}"

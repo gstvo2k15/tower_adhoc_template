@@ -1,0 +1,26 @@
+---
+- name: Starting block for create_inventory
+  block:
+
+    - name: Build simple time suffix for every launch
+      set_fact:
+        inv_suffix: "{{ now().strftime('%H%M%S') }}"
+
+    - name: Create adhoc inventory
+      uri:
+        url: "{{ ansible_url }}/inventories/"
+        method: POST
+        status_code: [200, 201]
+        headers:
+          Accept: application/json
+          Authorization: "Bearer {{ svc_token }}"
+        validate_certs: false
+        body_format: json
+        body:
+          name: "Adhoc Elastic {{ product_family }} {{ region_norm }} {{ env_norm }} {{ inv_suffix }}"
+          organization: "{{ organization_id | int }}"
+      register: inv
+
+    - name: Set_fact of inventory_id
+      set_fact:
+        inventory_id: "{{ inv.json.id }}"

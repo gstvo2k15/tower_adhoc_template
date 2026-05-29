@@ -1,0 +1,28 @@
+---
+- hosts:
+    - all
+  vars_files:
+    - roles/elastic-tomcat-info/vars/apigee.yml
+
+  any_errors_fatal: false
+  gather_timeout: 30
+  strategy: free
+  ignore_unreachable: true
+  become: true
+
+  tasks:
+    - block:
+        - include_role:
+            name: elastic-tomcat-info
+          when: |
+            product == "dpi_upgraded_jboss_ews"
+            or
+            product == "dpi_upgraded_tomcat"
+            or
+            product == "jboss_ews"
+            or
+            product == "tomcat"
+            or
+            product == "tomcat_ibm"
+            or
+            product == "tomcat_ibmcloud_vpc"

@@ -1,0 +1,42 @@
+---
+- name: Starting block for create_adhoc_template
+  block:
+
+    - name: Build extra_vars dictionary (keep survey keys/values)
+      set_fact:
+        extra_vars_dict:
+          region: "{{ region }}"
+          envs: "{{ envs }}"
+          product: "{{ product }}"
+          update: "{{ update }}"
+          ansible_url: "{{ ansible_url }}"
+          capsule_url: "{{ capsule_url }}"
+          data_env: "{{ data_env }}"
+
+    - name: Create adhoc job template for wished product
+      uri:
+        url: "{{ ansible_url }}/job_templates/"
+        method: POST
+        status_code: [200, 201]
+        headers:
+          Accept: application/json
+          Authorization: "Bearer {{ svc_token }}"
+        validate_certs: false
+        body_format: json
+        body:
+          name: "Adhoc-Elastic {{ product_family }} {{ region_norm }} {{ env_norm }} {{ location_zone }} {{ inv_suffix }}"
+          job_type: "run"
+          inventory: "{{ inventory_id | int }}"
+          project: "{{ project_id | int }}"
+          playbook: "{{ playbook_path }}"
+          execution_environment_id: "{{ execution_environment_id | int }}"
+          forks: 25
+          limit: "{{ launch_limit }}"
+          extra_vars: "{{ extra_vars_dict | to_json }}"
+          ask_verbosity_on_launch: true
+      register: adhoc_template
+
+    - name: Set adhoc_template_id
+      set_fact:
+        adhoc_template_id: "{{ adhoc_template.json.id }}"
+      when: adhoc_template is succeeded

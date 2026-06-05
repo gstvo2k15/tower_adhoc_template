@@ -15,13 +15,9 @@
   import_tasks: 03_create_inventory.yml
   tags: inventory
 
-- name: Create SCM inventory source (single ini)
-  import_tasks: 04_create_sources.yml
-  tags: sources
-
-- name: Sync inventory source
-  import_tasks: 05_sync_sources.yml
-  tags: sync
+- name: Create filtered inventory hosts
+  import_tasks: 04_create_filtered_hosts.yml
+  tags: hosts
 
 - name: Generate adhoc job template
   import_tasks: 06_create_adhoc_template.yml

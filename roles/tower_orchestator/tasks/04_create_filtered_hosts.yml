@@ -1,0 +1,94 @@
+---
+- name: Read selected product INI from project checkout
+  set_fact:
+    inventory_ini_content: "{{ lookup('file', playbook_dir ~ '/' ~ ini_source_path) }}"
+
+- name: Extract calculated group block from INI
+  set_fact:
+    filtered_group_body: >-
+      {{
+        (
+          inventory_ini_content
+          | regex_search('(?ms)^\\[' ~ (launch_limit | regex_escape) ~ '\\]\\s*\\n(.*?)(?=^\\[|\\Z)', '\\1')
+          | default([''])
+        )[0]
+      }}
+
+- name: Build filtered host lines
+  set_fact:
+    filtered_host_lines: >-
+      {{
+        filtered_group_body.splitlines()
+        | map('trim')
+        | reject('equalto', '')
+        | reject('match', '^#')
+        | list
+      }}
+
+- name: Fail if calculated group does not exist or has no hosts
+  fail:
+    msg: "No hosts found for group [{{ launch_limit }}] in {{ ini_source_path }}"
+  when: filtered_host_lines | length == 0
+
+- name: Create group matching calculated limit
+  uri:
+    url: "{{ ansible_url }}/inventories/{{ inventory_id }}/groups/"
+    method: POST
+    status_code: [200, 201]
+    headers:
+      Accept: application/json
+      Authorization: "Bearer {{ svc_token }}"
+    validate_certs: false
+    body_format: json
+    body:
+      name: "{{ launch_limit }}"
+      inventory: "{{ inventory_id | int }}"
+  register: filtered_group
+
+- name: Create filtered hosts in temporary inventory
+  uri:
+    url: "{{ ansible_url }}/inventories/{{ inventory_id }}/hosts/"
+    method: POST
+    status_code: [200, 201]
+    headers:
+      Accept: application/json
+      Authorization: "Bearer {{ svc_token }}"
+    validate_certs: false
+    body_format: json
+    body:
+      name: "{{ item.split()[0] }}"
+      inventory: "{{ inventory_id | int }}"
+      variables: "{{ filtered_host_vars | to_nice_yaml }}"
+  vars:
+    filtered_host_vars: >-
+      {{
+        dict(
+          item.split()[1:]
+          | select('search', '=')
+          | map('split', '=', 1)
+        )
+      }}
+  loop: "{{ filtered_host_lines }}"
+  register: filtered_hosts_created
+
+- name: Add filtered hosts to calculated group
+  uri:
+    url: "{{ ansible_url }}/groups/{{ filtered_group.json.id }}/hosts/"
+    method: POST
+    status_code: [200, 201, 204]
+    headers:
+      Accept: application/json
+      Authorization: "Bearer {{ svc_token }}"
+    validate_certs: false
+    body_format: json
+    body:
+      id: "{{ item.json.id | int }}"
+  loop: "{{ filtered_hosts_created.results }}"
+
+- name: Show filtered inventory summary
+  debug:
+    msg:
+      inventory_id: "{{ inventory_id }}"
+      ini_source_path: "{{ ini_source_path }}"
+      launch_limit: "{{ launch_limit }}"
+      hosts_created: "{{ filtered_host_lines | length }}"

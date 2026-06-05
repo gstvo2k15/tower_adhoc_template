@@ -31,6 +31,7 @@
           playbook: "{{ playbook_path }}"
           execution_environment_id: "{{ execution_environment_id | int }}"
           forks: 25
+          timeout: "{{ job_template_timeout | int }}"
           limit: "{{ launch_limit }}"
           extra_vars: "{{ extra_vars_dict | to_json }}"
           ask_verbosity_on_launch: true

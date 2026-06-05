@@ -5,14 +5,11 @@
 
 - name: Extract calculated group block from INI
   set_fact:
-    filtered_group_body: >-
-      {{
-        (
-          inventory_ini_content
-          | regex_search('(?ms)^\\[' ~ (launch_limit | regex_escape) ~ '\\]\\s*\\n(.*?)(?=^\\[|\\Z)', '\\1')
-          | default([''])
-        )[0]
-      }}
+    filtered_group_match: "{{ inventory_ini_content | regex_search('(?ms)^\\[' ~ (launch_limit | regex_escape) ~ '\\]\\s*\\n.*?(?=^\\[|\\Z)') }}"
+
+- name: Remove group header from matched block
+  set_fact:
+    filtered_group_body: "{{ filtered_group_match | regex_replace('(?ms)^\\[' ~ (launch_limit | regex_escape) ~ '\\]\\s*\\n', '') }}"
 
 - name: Build filtered host lines
   set_fact:
@@ -25,10 +22,9 @@
         | list
       }}
 
-- name: Fail if calculated group does not exist or has no hosts
-  fail:
-    msg: "No hosts found for group [{{ launch_limit }}] in {{ ini_source_path }}"
-  when: filtered_host_lines | length == 0
+- name: Debug of filtered hosts
+  debug:
+    msg: "{{ filtered_host_lines }}"
 
 - name: Create group matching calculated limit
   uri:

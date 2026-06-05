@@ -69,3 +69,4 @@ double_region_products:
 # 600 x 30 s = 5 h
 max_retries: 600
 delay_seconds: 30
+job_template_timeout: 21.600

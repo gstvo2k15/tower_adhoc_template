@@ -1,6 +1,46 @@
 ---
-- hosts: all
+- name: Execute Elastic inventory batch
+  hosts: localhost
   connection: local
   gather_facts: false
-  roles:
-    - role: tower_orchestator
+
+  vars:
+    sleep_seconds: 60
+    calls_file: "{{ playbook_dir }}/templates/{{ batch_name }}.list"
+
+  tasks:
+    - name: Validate selected batch
+      ansible.builtin.assert:
+        that:
+          - batch_name in
+            [
+              'weblogic',
+              'websphere',
+              'jbosseap',
+              'tomcat',
+              'apache',
+              'iis'
+            ]
+        fail_msg: "Invalid batch_name={{ batch_name }}"
+
+    - name: Read selected limits file
+      ansible.builtin.set_fact:
+        calls_file_content: "{{ lookup('file', calls_file) }}"
+
+    - name: Build limits execution list
+      ansible.builtin.set_fact:
+        elastic_calls: >-
+          {{
+            calls_file_content.splitlines()
+            | map('trim')
+            | reject('equalto', '')
+            | reject('match', '^#')
+            | list
+          }}
+
+    - name: Execute tower orchestrator for every limit
+      ansible.builtin.include_tasks: tasks/execute_elastic_call.yml
+      loop: "{{ elastic_calls }}"
+      loop_control:
+        loop_var: elastic_call
+        label: "{{ elastic_call }}"

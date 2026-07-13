@@ -1,0 +1,38 @@
+---
+- name: Parse current limits row
+  ansible.builtin.set_fact:
+    elastic_fields: "{{ elastic_call.split('|') }}"
+
+- name: Validate current limits row
+  ansible.builtin.assert:
+    that:
+      - elastic_fields | length == 6
+    fail_msg: "Invalid row in {{ calls_file }}: {{ elastic_call }}"
+
+- name: Prepare current execution variables
+  ansible.builtin.set_fact:
+    current_region: "{{ elastic_fields[0] | trim }}"
+    current_env: "{{ elastic_fields[1] | trim }}"
+    current_product: "{{ elastic_fields[2] | trim }}"
+    current_limit: "{{ elastic_fields[3] | trim }}"
+    current_instance_group: "{{ elastic_fields[4] | trim }}"
+    current_zone: "{{ elastic_fields[5] | trim }}"
+    current_is_ets: "{{ (elastic_fields[5] | trim | upper) == 'ETS' }}"
+
+- name: Execute tower orchestrator for current limit
+  ansible.builtin.include_role:
+    name: tower_orchestator
+  vars:
+    region: "{{ current_region }}"
+    envs: "{{ current_env }}"
+    product: "{{ current_product }}"
+    limit: "{{ current_limit }}"
+    update: "update"
+    instance_group: "{{ current_instance_group }}"
+    data_env: "prod"
+    is_ETS: "{{ current_is_ets | bool }}"
+    location_zone: "{{ current_zone }}"
+
+- name: Wait before next limit
+  ansible.builtin.pause:
+    seconds: "{{ sleep_seconds | int }}"

@@ -57,3 +57,18 @@ El mensaje es un warning, no un fallo de arranque. Apache ignora la segunda carg
     -k graceful \
     -f /data/apache_emandate/apache/conf/httpd.conf
 ```
+
+
+
+### Obten la lista real
+```bash
+/apps/install/apache/2.4.65/bin/httpd -t -D DUMP_INCLUDES -f /data/apache_emandate/apache/conf/httpd.conf
+
+grep -RnisE 'LoadModule[[:space:]]+security2_module|mod_security2\.so|security2_module' /data/apache_emandate/apache /apps/install/apache/2.4.65 2>/dev/null
+
+
+grep -RnisE 'security2|mod_security|LoadModule|[[:space:]]-[Cc][[:space:]]' /data/apache_emandate/apache/scripts /data/apache_emandate/apache/conf 2>/dev/null
+
+
+grep -RnisE 'security2|mod_security|LoadModule|mod_security2\.so' /data/apache_emandate/apache/conf/WebAgent.conf /data/apache_emandate 2>/dev/null
+```

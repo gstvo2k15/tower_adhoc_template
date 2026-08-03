@@ -23,7 +23,7 @@ openshift-poc/
 ```
 
 
-El orden correcto para arrancar esta POC en OpenShift sería este:
+El orden correcto para arrancar esta P$OC en OpenShift sería este:
 
     - Preparar los ficheros en Git bajo openshift-poc/.
     - Crear ServiceAccount + RBAC en middleware-poc.
@@ -145,7 +145,7 @@ El flujo de arranque real queda:
 
 
 
-Necesitas un ServiceAccount dentro de middleware-poc con permisos para ejecutar el Workflow y, si usas Vault/BuildKit, con las asociaciones necesarias.
+Necesitas un ServiceAccount dentro de middleware-p$OC con permisos para ejecutar el Workflow y, si usas Vault/BuildKit, con las asociaciones necesarias.
 
 Primero mira si ya existe alguno adecuado desde la consola web de OpenShift:
 
@@ -167,11 +167,11 @@ pipeline
 default
 
 Si tienes acceso a terminal web de OpenShift, también podrías consultar:
-`oc get serviceaccount -n middleware-poc`
+`$OC get serviceaccount -n middleware-poc`
 
 Pero como no tienes oc, la UI es suficiente.
 
-Para tu POC yo crearía uno propio:
+Para tu P$OC yo crearía uno propio:
 
 openshift-poc-workflow
 
@@ -268,7 +268,7 @@ Eso requerirá normalmente que un administrador permita al ServiceAccount usar u
 El admin podría hacer algo como:
 
 ```bash
-oc adm policy add-scc-to-user \
+$OC adm policy add-scc-to-user \
   privileged \
   -z openshift-poc-workflow \
   -n middleware-poc
@@ -356,3 +356,216 @@ Si usas la consola web, los tres YAML ServiceAccount + Role + RoleBinding los pu
 
 Project middleware-poc
 → Import YAML
+
+
+
+
+### LAST 12:30 AM 03/08:
+
+Eso confirma que solo has creado la ServiceAccount; todavía no le has asociado ningún Role ni RoleBinding.
+
+Los no son esperables:
+
+create pods       no
+create pods/log   no
+create secrets    no
+create pvc        no
+
+No necesitas darle permiso para crear secretos. Los secretos se crean previamente. Para Argo Workflows necesitas principalmente permisos sobre workflowtaskresults; el controlador de Argo suele encargarse de crear los pods. Como tu Workflow usa volumeClaimTemplates, también necesitas comprobar cómo está configurado el controlador respecto a los PVC.
+
+1. Crea workflow/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflow-poc
+  namespace: middleware-poc
+
+rules:
+  # Permisos que necesita el executor moderno de Argo Workflows
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflowtaskresults
+    verbs:
+      - create
+      - patch
+
+  # Lectura básica para diagnóstico
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+    verbs:
+      - get
+      - list
+      - watch
+
+  # El Workflow usa volumeClaimTemplates
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+2. Crea workflow/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflow-poc
+  namespace: middleware-poc
+
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-poc
+    namespace: middleware-poc
+
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-workflow-poc
+3. Aplica ambos
+
+Desde openshift-poc:
+
+$OC apply -f workflow/role.yaml
+$OC apply -f workflow/rolebinding.yaml
+
+Comprueba:
+
+$OC get role,rolebinding -n middleware-p$OC | grep argo-workflow-poc
+
+
+
+4. Verifica permisos relevantes
+$OC auth can-i create workflowtaskresults.argoproj.io \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-p$OC \
+  -n middleware-poc
+
+Debe devolver:
+yes
+
+
+$OC auth can-i patch workflowtaskresults.argoproj.io \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-p$OC \
+  -n middleware-poc
+
+Debe devolver:
+yes
+
+
+$OC auth can-i get pods \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-p$OC \
+  -n middleware-poc
+
+$OC auth can-i get pods/log \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-p$OC \
+  -n middleware-poc
+
+$OC auth can-i create persistentvolumeclaims \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-p$OC \
+  -n middleware-poc
+
+No compruebes:
+
+$OC auth can-i create pods/log
+
+Los logs no se crean; se consultan con get.
+
+5. Sintaxis correcta para comprobar la SCC
+
+Tu comando falló porque restricted-v2 debe formar parte del recurso:
+
+$OC auth can-i use \
+  securitycontextconstraints.security.openshift.io/restricted-v2 \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-poc
+
+También puedes probar:
+
+$OC auth can-i use scc/restricted-v2 \
+  --as=system:serviceaccount:middleware-poc:argo-workflow-poc
+
+Debería devolver:
+yes
+
+Pero el hecho de poder usar restricted-v2 no significa que tu Workflow actual vaya a arrancar. En el build-tomcat.yaml tienes:
+
+```yaml
+securityContext:
+  privileged: true
+```
+Eso es incompatible con restricted-v2.
+
+6. Cambia BuildKit para la primera prueba
+
+Como usas una imagen BuildKit rootless:
+
+image: "{{workflow.parameters.docker-repo}}/moby/buildkit:v0.9.3-rootless"
+
+elimina:
+
+securityContext:
+  privileged: true
+
+y usa:
+
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+Si la imagen requiere escribir en el filesystem raíz, también puede fallar bajo restricted-v2; primero prueba sin readOnlyRootFilesystem.
+
+7. No añadas permiso para crear secretos
+
+Este resultado puede seguir siendo:
+
+create secrets: no
+
+Es correcto. Crea previamente los secretos necesarios con tu usuario:
+
+credenciales Bitbucket
+credenciales Artifactory
+pull secret
+
+El Workflow solo debería leerlos mediante secretKeyRef o recibirlos mediante Vault.
+
+8. Comprueba que Argo Workflows existe
+
+Antes de lanzar build-tomcat.yaml:
+
+$OC api-resources | grep -i workflow
+$OC get crd workflows.argoproj.io
+$OC get workflows -A
+
+Si aparece:
+
+the server doesn't have a resource type "workflows"
+
+Argo Workflows no está instalado en ese OpenShift.
+
+También localiza el namespace:
+
+$OC get pods -A | grep -Ei 'workflow-controller|argo-server'
+Estado actual
+ServiceAccount: creada
+Role: falta aplicar
+RoleBinding: falta aplicar
+SCC restricted-v2: comprobar con sintaxis correcta
+BuildKit privileged: debe eliminarse
+Argo Workflows instalado: falta comprobar
+Credenciales Bitbucket/Artifactory: falta resolver
+
+El siguiente paso inmediato es:
+
+$OC apply -f workflow/role.yaml
+$OC apply -f workflow/rolebinding.yaml
+$OC get crd workflows.argoproj.io
+
+

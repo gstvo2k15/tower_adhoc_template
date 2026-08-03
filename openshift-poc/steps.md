@@ -569,3 +569,125 @@ $OC apply -f workflow/rolebinding.yaml
 $OC get crd workflows.argoproj.io
 
 
+### LAST 1402h
+
+Ese 403 significa que tu usuario no puede crear Role en middleware-poc. Puedes crear algunos recursos namespaced, como el ServiceAccount, pero no conceder permisos RBAC.
+
+No sigas intentando ampliar permisos desde tu usuario.
+
+Comprueba exactamente qué puedes crear:
+
+$OC auth can-i create roles.rbac.authorization.k8s.io \
+  -n middleware-poc
+$OC auth can-i create rolebindings.rbac.authorization.k8s.io \
+  -n middleware-poc
+
+Devolverán previsiblemente:
+
+no
+Qué debe hacer un administrador
+
+Entrégale estos tres datos:
+
+Namespace:
+middleware-poc
+
+ServiceAccount:
+argo-workflow-poc
+
+Identidad completa:
+system:serviceaccount:middleware-poc:argo-workflow-poc
+
+Y estos manifiestos.
+
+workflow/role.yaml
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflow-poc
+  namespace: middleware-poc
+rules:
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflowtaskresults
+    verbs:
+      - create
+      - patch
+
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - pods/log
+    verbs:
+      - get
+      - list
+      - watch
+
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+workflow/rolebinding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflow-poc
+  namespace: middleware-poc
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflow-poc
+    namespace: middleware-poc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-workflow-poc
+```
+
+El administrador ejecutaría:
+
+$OC apply -f workflow/role.yaml
+$OC apply -f workflow/rolebinding.yaml
+Posible alternativa ya existente
+
+Antes de pedir RBAC nuevo, comprueba si el equipo de OpenShift ya proporciona una ServiceAccount para Argo Workflows:
+
+$OC get serviceaccounts -A | grep -Ei 'argo|workflow|pipeline'
+
+Y localiza Argo Workflows:
+
+$OC get pods -A | grep -Ei 'workflow-controller|argo-server'
+
+Puede existir una SA autorizada en otro namespace, pero no podrás usarla directamente en middleware-poc: las ServiceAccounts son namespaced.
+
+No uses builder
+
+builder tiene permisos relacionados con BuildConfig y Builds de OpenShift, visibles en tu salida:
+
+builds/docker
+builds/source
+buildconfigs/webhooks
+
+Eso no equivale a permisos para Argo Workflows ni BuildKit.
+
+Bloqueo actual
+
+El proyecto está bloqueado en infraestructura:
+
+ServiceAccount creada             sí
+Role                               no, 403
+RoleBinding                        no
+Workflow ejecutable               todavía no
+Imagen en Artifactory             todavía no
+Argo CD                            no debe sincronizar aún
+
+Necesitas que el responsable de OpenShift aplique el RBAC o te asigne un rol autorizado ya existente. El 403 no se arregla modificando el Workflow.
+

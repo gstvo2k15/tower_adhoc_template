@@ -1,3 +1,150 @@
+```bash
+openshift-poc/
+├── tomcat/
+│   ├── Dockerfile
+│   └── ROOT/
+│       └── index.jsp
+│
+├── workflow/
+│   ├── serviceaccount.yaml
+│   ├── role.yaml
+│   ├── rolebinding.yaml
+│   └── build-tomcat.yaml
+│
+├── kustomize/
+│   └── dev/
+│       ├── deployment.yaml
+│       ├── service.yaml
+│       ├── route.yaml
+│       └── kustomization.yaml
+│
+└── argocd/
+    └── application-kustomize.yaml
+```
+
+
+El orden correcto para arrancar esta POC en OpenShift sería este:
+
+    - Preparar los ficheros en Git bajo openshift-poc/.
+    - Crear ServiceAccount + RBAC en middleware-poc.
+    - Lanzar manualmente el Workflow desde Argo Workflows para construir la imagen y publicarla en Artifactory.
+    - Comprobar que la imagen existe en Artifactory.
+    - Crear la Application en Argo CD apuntando a openshift-poc/kustomize/dev.
+    - Argo CD sincroniza y despliega en middleware-poc.
+
+```bash
+Git
+ │
+ ▼
+ServiceAccount/RBAC
+ │
+ ▼
+Argo Workflows
+ │
+ ▼
+Artifactory
+ │
+ ▼
+Argo CD
+ │
+ ▼
+OpenShift
+```
+
+
+### Paso 1
+
+Luego, en la consola web de OpenShift, proyecto:
+
+middleware-poc
+
+usas:
+
+Import YAML
+
+y creas primero estos tres recursos:
+
+serviceaccount.yaml
+role.yaml
+rolebinding.yaml
+
+
+
+### Paso 2
+
+Después vas a Argo Workflows UI, eliges el namespace middleware-poc, haces:
+
+Submit New Workflow
+→ Edit using full workflow options
+→ pegas build-tomcat.yaml
+→ Submit
+
+Ese Workflow debería hacer:
+
+clone Bitbucket
+→ build Dockerfile
+→ push Artifactory
+
+
+Cuando termine en Succeeded, vas a Artifactory y compruebas que existe:
+
+middleware-docker-local-dev.artifactory.cib.echonet/
+openshift-poc-tomcat:10.1.57-jdk11-debian13
+
+
+
+
+### Paso 3
+
+Solo entonces vas a Argo CD UI y creas la app con:
+
+`openshift-poc/argocd/application-kustomize.yaml`
+
+La Application apuntará a:
+
+repo:
+kube-cicd
+
+branch:
+feature/openshift-poc
+
+path:
+openshift-poc/kustomize/dev
+
+namespace:
+middleware-poc
+
+Argo CD verá:
+```bash
+deployment.yaml
+service.yaml
+route.yaml
+kustomization.yaml
+```
+
+y desplegará:
+
+Deployment
+Service
+Route
+
+en OpenShift.
+
+El flujo de arranque real queda:
+
+1. Git push
+2. Crear SA/RBAC
+3. Ejecutar Workflow
+4. Ver imagen en Artifactory
+5. Crear Application Argo CD
+6. Sync
+7. Ver Pod
+8. Abrir Route
+
+
+
+
+
 Necesitas un ServiceAccount dentro de middleware-poc con permisos para ejecutar el Workflow y, si usas Vault/BuildKit, con las asociaciones necesarias.
 
 Primero mira si ya existe alguno adecuado desde la consola web de OpenShift:

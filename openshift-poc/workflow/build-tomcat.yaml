@@ -1,0 +1,218 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+
+metadata:
+  generateName: openshift-poc-tomcat-
+
+spec:
+  # Mantengo el SA que aparece en vuestro tomcat-wf.yaml existente.
+  # Si el Workflow de OpenShift usa otro SA, habrá que sustituirlo.
+  serviceAccountName: shaun
+
+  entrypoint: pipeline
+
+  imagePullSecrets:
+    - name: artifactory-reg
+
+  arguments:
+    parameters:
+
+      # Registry desde el que obtenéis las imágenes auxiliares
+      - name: docker-repo
+        value: docker.artifactory.cib.echonet
+
+      # Registry donde publicaremos nuestra imagen POC
+      - name: artifactory
+        value: middleware-docker-local-dev.artifactory.cib.echonet
+
+      # Repo Bitbucket
+      - name: git-repo
+        value: bitbucket.cib.echonet:7999/middleware/kube-cicd.git
+
+      # IMPORTANTE: nuestra rama, no master
+      - name: git-revision
+        value: feature/openshift-poc
+
+      # Directorio donde está nuestro Dockerfile
+      - name: dockerfile-path
+        value: openshift-poc/tomcat
+
+      # Nombre final de la imagen
+      - name: image-name
+        value: openshift-poc-tomcat
+
+      # Tag inicial de la POC
+      - name: image-tag
+        value: 10.1.57-jdk11-debian13
+
+
+  # Espacio compartido entre clone y build
+  volumeClaimTemplates:
+    - metadata:
+        name: src
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 256Mi
+
+
+  templates:
+
+    # ============================================================
+    # PIPELINE
+    # ============================================================
+
+    - name: pipeline
+      steps:
+
+        - - name: clone
+            template: git-clone
+
+        - - name: build-and-push
+            template: build-image
+
+
+    # ============================================================
+    # 1. CLONE BITBUCKET
+    # ============================================================
+
+    - name: git-clone
+
+      metadata:
+        annotations:
+
+          # Estas anotaciones están basadas en vuestro
+          # tomcat-wf.yaml existente.
+          vault.hashicorp.com/agent-inject: "true"
+          vault.hashicorp.com/role: "shaun"
+
+          vault.hashicorp.com/secret-volume-path-idrsa: "/ssh"
+          vault.hashicorp.com/agent-inject-secret-idrsa: "secret/ssh"
+
+          vault.hashicorp.com/agent-inject-template-idrsa: |
+            {{- with secret "shaun/kv/ssh" -}}
+            {{ .Data.data.private }}
+            {{- end }}
+
+      container:
+
+        image: "{{workflow.parameters.docker-repo}}/alpine/git"
+
+        command:
+          - sh
+          - -c
+
+        args:
+          - |
+            set -eux
+
+            echo "========================================"
+            echo " Clonando kube-cicd"
+            echo " Branch: {{workflow.parameters.git-revision}}"
+            echo "========================================"
+
+            mkdir -p /root/.ssh
+
+            cp /ssh/idrsa /root/.ssh/id_rsa
+            chmod 600 /root/.ssh/id_rsa
+
+            export GIT_SSH_COMMAND="ssh \
+              -i /root/.ssh/id_rsa \
+              -o UserKnownHostsFile=/dev/null \
+              -o StrictHostKeyChecking=no"
+
+            git clone \
+              --branch "{{workflow.parameters.git-revision}}" \
+              "ssh://git@{{workflow.parameters.git-repo}}" \
+              /src/repository
+
+            echo "Repositorio clonado."
+
+            echo "Contenido POC:"
+            ls -la /src/repository/openshift-poc
+
+            echo "Contenido Tomcat:"
+            ls -la /src/repository/{{workflow.parameters.dockerfile-path}}
+
+            test -f \
+              /src/repository/{{workflow.parameters.dockerfile-path}}/Dockerfile
+
+            echo "Dockerfile encontrado."
+
+        volumeMounts:
+          - name: src
+            mountPath: /src
+
+        securityContext:
+          allowPrivilegeEscalation: false
+
+
+    # ============================================================
+    # 2. BUILD + PUSH ARTIFACTORY
+    # ============================================================
+
+    - name: build-image
+
+      metadata:
+        annotations:
+
+          # Mismo patrón que aparece en vuestro workflow existente
+          # para proporcionar configuración de BuildKit.
+          vault.hashicorp.com/agent-inject: "true"
+          vault.hashicorp.com/role: "shaun"
+
+          vault.hashicorp.com/secret-volume-path-config-json: "/secrets"
+          vault.hashicorp.com/agent-inject-secret-config-json: "secret/buildkit-configjson"
+
+          vault.hashicorp.com/agent-inject-template-config-json: |
+            {{- with secret "shaun/kv/docker" -}}
+            {{ .Data.data | toUnescapedJSON }}
+            {{- end }}
+
+          vault.hashicorp.com/secret-volume-path-ca.crt: "/etc/ssl/certs"
+          vault.hashicorp.com/agent-inject-secret-ca.crt: "shaun/kv/bnpp-ca"
+
+          vault.hashicorp.com/agent-inject-template-ca.crt: |
+            {{- with secret "shaun/kv/bnpp-ca" -}}
+            {{ .Data.data.ca }}
+            {{- end }}
+
+      container:
+
+        # Es la misma familia de imagen que utiliza el
+        # tomcat-wf.yaml que enseñaste.
+        image: "{{workflow.parameters.docker-repo}}/moby/buildkit:v0.9.3-rootless"
+
+        workingDir: "/src/repository/{{workflow.parameters.dockerfile-path}}"
+
+        env:
+          - name: DOCKER_CONFIG
+            value: /secrets
+
+        command:
+          - buildctl-daemonless.sh
+
+        args:
+          - build
+
+          - --frontend
+          - dockerfile.v0
+
+          - --local
+          - context=.
+
+          - --local
+          - dockerfile=.
+
+          - --output
+          - >-
+            type=image,name={{workflow.parameters.artifactory}}/{{workflow.parameters.image-name}}:{{workflow.parameters.image-tag}},push=true
+
+        volumeMounts:
+          - name: src
+            mountPath: /src
+
+        securityContext:
+          privileged: true

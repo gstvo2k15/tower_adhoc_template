@@ -1,0 +1,201 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+
+metadata:
+  generateName: openshift-poc-tomcat-
+
+spec:
+  imagePullSecrets:
+    - name: artifactory-reg
+
+  serviceAccountName: shaun
+  entrypoint: try-clones
+
+  arguments:
+    parameters:
+      - name: docker-repo
+        value: docker.artifactory.cib.echonet
+
+      - name: artifactory-dev
+        value: middleware-docker-local-dev.artifactory.cib.echonet
+
+      - name: artifactory-prd
+        value: middleware-docker-local-release.artifactory.cib.echonet
+
+      - name: git-repo-http
+        value: bitbucket.cib.echonet/scm/middleware/kube-cicd.git
+
+      - name: git-repo-ssh
+        value: bitbucket.cib.echonet:7999/middleware/kube-cicd.git
+
+      - name: git-repo-revision
+        value: feature/openshift-poc
+
+      - name: git-repo-path
+        value: openshift-poc/tomcat
+
+      - name: project-name
+        value: openshift-poc-tomcat
+
+      - name: version
+        value: "1.0.0"
+
+  volumeClaimTemplates:
+    - metadata:
+        name: src
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 64Mi
+
+  ephemeralContainers:
+    securityContext:
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+
+  initContainers:
+    securityContext:
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+
+  containers:
+    securityContext:
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+
+  templates:
+    - name: try-clones
+      steps:
+        - - name: clone
+            template: git-vault-clone
+            arguments:
+              parameters:
+                - name: docker
+                  value: "{{workflow.parameters.docker-repo}}"
+
+                - name: git-repo
+                  value: "{{workflow.parameters.git-repo-ssh}}"
+
+                - name: git-repo-revision
+                  value: "{{workflow.parameters.git-repo-revision}}"
+
+        - - name: build
+            template: build-app
+            arguments:
+              parameters:
+                - name: docker
+                  value: "{{workflow.parameters.docker-repo}}"
+
+                - name: project-name
+                  value: "{{workflow.parameters.project-name}}"
+
+                - name: path
+                  value: "{{workflow.parameters.git-repo-path}}"
+
+                - name: version
+                  value: "{{workflow.parameters.version}}"
+
+                - name: artifactory
+                  value: "{{workflow.parameters.artifactory-dev}}"
+
+    - name: git-vault-clone
+      metadata:
+        annotations:
+          vault.hashicorp.com/agent-inject: "true"
+          vault.hashicorp.com/role: "shaun"
+          vault.hashicorp.com/secret-volume-path-token: "/secrets"
+          vault.hashicorp.com/agent-inject-secret-token: "secret/git-apikey"
+          vault.hashicorp.com/agent-inject-template-token: |
+            {{- with secret "shaun/kv/bitbucket" -}}
+            {{ .Data.data.apikey }}
+            {{- end }}
+          vault.hashicorp.com/secret-volume-path-idrsa: "/ssh"
+          vault.hashicorp.com/agent-inject-secret-idrsa: "secret/ssh"
+          vault.hashicorp.com/agent-inject-template-idrsa: |
+            {{- with secret "shaun/kv/ssh" -}}
+            {{ .Data.data.private }}
+            {{- end }}
+
+      inputs:
+        parameters:
+          - name: docker
+          - name: git-repo
+          - name: git-repo-revision
+
+      container:
+        image: "{{inputs.parameters.docker}}/alpine/git"
+        command:
+          - sh
+          - -c
+        args:
+          - >
+            GIT_SSH_COMMAND='ssh -i /ssh/idrsa -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
+            git clone ssh://git@{{inputs.parameters.git-repo}}
+            -b {{inputs.parameters.git-repo-revision}} .
+        workingDir: /src
+        volumeMounts:
+          - name: src
+            mountPath: /src
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+
+    - name: build-app
+      metadata:
+        annotations:
+          vault.hashicorp.com/agent-inject: "true"
+          vault.hashicorp.com/role: "shaun"
+          vault.hashicorp.com/secret-volume-path-config.json: "/secrets"
+          vault.hashicorp.com/agent-inject-secret-config.json: "secret/buildkit-configjson"
+          vault.hashicorp.com/agent-inject-template-config.json: |
+            {{- with secret "shaun/kv/docker" -}}
+            {{ .Data.data | toUnescapedJSON }}
+            {{- end }}
+          vault.hashicorp.com/secret-volume-path-ca.crt: "/etc/ssl/certs"
+          vault.hashicorp.com/agent-inject-secret-ca.crt: "shaun/kv/bnpp-ca"
+          vault.hashicorp.com/agent-inject-template-ca.crt: |
+            {{- with secret "shaun/kv/bnpp-ca" -}}
+            {{ .Data.data.ca }}
+            {{- end }}
+
+      inputs:
+        parameters:
+          - name: path
+          - name: version
+          - name: project-name
+          - name: artifactory
+          - name: docker
+
+      container:
+        image: "{{inputs.parameters.docker}}/moby/buildkit:v0.9.3-rootless"
+
+        volumeMounts:
+          - name: src
+            mountPath: /src
+
+        workingDir: "/src/{{inputs.parameters.path}}"
+
+        env:
+          - name: DOCKER_CONFIG
+            value: /secrets
+
+        command:
+          - buildctl-daemonless.sh
+
+        args:
+          - build
+          - --frontend
+          - dockerfile.v0
+          - --local
+          - context=.
+          - --local
+          - dockerfile=/src/{{inputs.parameters.path}}/.
+          - --output
+          - type=image,name={{inputs.parameters.artifactory}}/{{inputs.parameters.project-name}}:v{{inputs.parameters.version}},push=true
+          - --metadata-file
+          - /src/{{inputs.parameters.path}}/metadata-{{inputs.parameters.project-name}}_{{inputs.parameters.version}}
+
+        securityContext:
+          privileged: true

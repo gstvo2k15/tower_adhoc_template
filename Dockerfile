@@ -33,4 +33,4 @@ WORKDIR "${CATALINA_HOME}"
 
 EXPOSE 8080
 
-CMD ["catalina.sh", "run"]
+CMD ["catalina.sh", "run"]  

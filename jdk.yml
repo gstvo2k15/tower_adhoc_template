@@ -1,29 +1,69 @@
-```bash
-post_tasks:
-  - name: Build MDW JDK outdated summary
-    ansible.builtin.set_fact:
-      jdk_summary: >-
-        {%- set result = [] -%}
-        {%- for host in ansible_play_hosts -%}
-          {%- if hostvars[host].mdw_jdk_needs_update | default(false) -%}
-            {%- for jdk in hostvars[host].mdw_jdk_outdated -%}
-              {%- set _ = result.append(
-                host ~ ' | '
-                ~ jdk.package ~ ' | '
-                ~ jdk.installed ~ ' -> '
-                ~ jdk.required
-              ) -%}
-            {%- endfor -%}
-          {%- endif -%}
-        {%- endfor -%}
-        {{ result }}
-    run_once: true
+``vars/main.yml`
 
-  - name: MDW JDK OUTDATED HOSTS
-    ansible.builtin.debug:
-      msg: "{{ item }}"
-    loop: "{{ jdk_summary }}"
-    loop_control:
-      label: ""
-    run_once: true
+```bash
+---
+mdw_jdk_required_versions:
+  mdw-jdk8: "1.8.0_491"
+  mdw-jdk11: "11.0.31"
+  mdw-jdk17: "17.0.8"
+  mdw-jdk21: "21.0.9"
+  mdw-jdk25: "25.0.3"
+```
+
+`roles/check_jdk_rpm/tasks/main.yml`
+
+```bash
+---
+- name: Gather installed package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Initialize JDK outdated flag
+  ansible.builtin.set_fact:
+    mdw_jdk_needs_update: false
+
+- name: Detect JDK below required version
+  ansible.builtin.set_fact:
+    mdw_jdk_needs_update: true
+  when:
+    - item.key in ansible_facts.packages
+    - ansible_facts.packages[item.key][0].version is version(
+        item.value,
+        '<',
+        version_type='loose'
+      )
+  loop: "{{ mdw_jdk_required_versions | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+```
+
+
+`play.yml`
+
+```bash
+---
+- name: Check MDW JDK minimum versions
+  hosts: all
+  gather_facts: false
+
+  roles:
+    - check_jdk_rpm
+
+  post_tasks:
+    - name: Build list of servers with outdated JDK
+      ansible.builtin.set_fact:
+        jdk_outdated_servers: >-
+          {%- set servers = [] -%}
+          {%- for host in ansible_play_hosts -%}
+            {%- if hostvars[host].mdw_jdk_needs_update | default(false) -%}
+              {%- set _ = servers.append(host) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ servers }}
+      run_once: true
+
+    - name: SERVERS WITH JDK BELOW REQUIRED VERSION
+      ansible.builtin.debug:
+        var: jdk_outdated_servers
+      run_once: true
 ```

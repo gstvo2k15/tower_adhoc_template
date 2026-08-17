@@ -1,0 +1,77 @@
+# ---------------------------------------------------------
+# Fallback:
+# readlink returned rc != 0
+#
+# Equals to:
+# ls -d /apps/install/*-tomcat*/current | grep -v native
+# ---------------------------------------------------------
+
+- name: Discover CATALINA_HOME when readlink fails
+  ansible.builtin.shell: |
+    set -o pipefail
+    ls -d /apps/install/*-tomcat*/current 2>/dev/null \
+      | grep -v native \
+      | head -1
+  args:
+    executable: /bin/bash
+  loop: "{{ cat_real_raw.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.rc | default(1) != 0
+  become: true
+  register: cat_real_fallback
+  changed_when: false
+  failed_when: false
+
+
+# ---------------------------------------------------------
+# Store fallback CATALINA_HOME
+# ---------------------------------------------------------
+
+- name: Store fallback CATALINA_HOME path
+  ansible.builtin.set_fact:
+    cat_real_by_inst: >-
+      {{
+        cat_real_by_inst | default({})
+        | combine({
+            (item.item.item.key):
+              (item.stdout | default('Not_found') | trim)
+          })
+      }}
+  loop: "{{ cat_real_fallback.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.item.key | default('unknown') }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.rc | default(1) == 0
+    - item.stdout | default('') | trim != ''
+
+
+# ---------------------------------------------------------
+# instances which could not be resolved by either method
+# ---------------------------------------------------------
+
+- name: Store Not_found for unresolved CATALINA_HOME
+  ansible.builtin.set_fact:
+    cat_real_by_inst: >-
+      {{
+        cat_real_by_inst | default({})
+        | combine({
+            item.key: 'Not_found'
+          })
+      }}
+  loop: "{{ cat_home_by_inst | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when:
+    - item.key not in (cat_real_by_inst | default({}))
+
+# ---------------------------------------------------------
+# Debug final CATALINA_HOME mapping
+# ---------------------------------------------------------
+
+- name: Show final resolved CATALINA_HOME paths
+  ansible.builtin.debug:
+    var: cat_real_by_inst

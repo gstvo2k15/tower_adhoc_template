@@ -1,0 +1,113 @@
+`roles/check_mdw_jdk/defaults/main.yml`
+
+
+```bash
+---
+mdw_jdk_required_versions:
+  mdw-jdk8:  "1.8.0_491"
+  mdw-jdk11: "11.0.31-0"
+  mdw-jdk17: "17.0.8-0"
+  mdw-jdk21: "21.0.9-0"
+  mdw-jdk25: "25.0.3-0"
+```
+
+
+`roles/check_mdw_jdk/tasks/main.yml`
+
+```bash
+---
+- name: Gather installed package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Initialize outdated JDK list
+  ansible.builtin.set_fact:
+    mdw_jdk_outdated: []
+
+- name: Check mdw-jdk versions
+  ansible.builtin.set_fact:
+    mdw_jdk_outdated: >-
+      {{
+        mdw_jdk_outdated
+        +
+        [
+          {
+            'package': item.key,
+            'installed': ansible_facts.packages[item.key][0].version
+                         ~
+                         (
+                           '-'
+                           ~ ansible_facts.packages[item.key][0].release
+                           if (
+                             ansible_facts.packages[item.key][0].release is defined
+                             and ansible_facts.packages[item.key][0].release | length > 0
+                           )
+                           else ''
+                         ),
+            'required': item.value
+          }
+        ]
+      }}
+  when:
+    - item.key in ansible_facts.packages
+    - >-
+      (
+        ansible_facts.packages[item.key][0].version
+        ~
+        (
+          '-'
+          ~ ansible_facts.packages[item.key][0].release
+          if (
+            ansible_facts.packages[item.key][0].release is defined
+            and ansible_facts.packages[item.key][0].release | length > 0
+          )
+          else ''
+        )
+      ) != item.value
+  loop: "{{ mdw_jdk_required_versions | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Mark host as outdated
+  ansible.builtin.set_fact:
+    mdw_jdk_needs_update: "{{ mdw_jdk_outdated | length > 0 }}"
+```
+
+`play.yml`
+
+```bash
+---
+- name: Check MDW JDK versions
+  hosts: all
+  gather_facts: false
+
+  roles:
+    - check_mdw_jdk
+
+  post_tasks:
+    - name: MDW JDK outdated hosts summary
+      ansible.builtin.debug:
+        msg: |
+          {% for host in ansible_play_hosts %}
+          {% if hostvars[host].mdw_jdk_needs_update | default(false) %}
+          {{ host }}:
+          {% for jdk in hostvars[host].mdw_jdk_outdated %}
+            {{ jdk.package }}: {{ jdk.installed }} -> {{ jdk.required }}
+          {% endfor %}
+          {% endif %}
+          {% endfor %}
+      run_once: true
+```
+
+
+
+
+```bash
+
+
+
+```
+
+
+
+

@@ -31,8 +31,7 @@ nc -vz secweb-stest3.dev.echonet 443
 Si `nc` no está disponible:
 
 ``` bash
-timeout 5 bash -c '</dev/tcp/secweb-stest3.dev.echonet/443' \
-&& echo "TCP 443 OK" || echo "TCP 443 FAIL"
+timeout 5 bash -c '</dev/tcp/secweb-stest3.dev.echonet/443' && echo "TCP 443 OK" || echo "TCP 443 FAIL"
 ```
 
 Si devuelve OK:
@@ -48,19 +47,13 @@ política de firewall sobre TLS.
 ## 4. Probar TLS sin Java y sin Tomcat
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2
 ```
 
 Para guardar toda la salida:
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2 </dev/null 2>&1 | tee /tmp/secweb_tls12.txt
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2 </dev/null 2>&1 | tee /tmp/secweb_tls12.txt
 ```
 
 Si también aparece `alert handshake failure`, el problema queda
@@ -69,10 +62,7 @@ reproducido sin Tomcat ni Java.
 ## 5. Probar directamente contra la IP manteniendo SNI
 
 ``` bash
-openssl s_client \
--connect 10.118.107.252:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2 </dev/null
+openssl s_client -connect 10.118.107.252:443 -servername secweb-stest3.dev.echonet -tls1_2 </dev/null
 ```
 
 Esta prueba elimina DNS de la conexión, pero mantiene el hostname TLS
@@ -112,29 +102,17 @@ necesario para reproducir el incidente.
 ## 8. Probar cipher suites concretas con TLS 1.2
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2 \
--cipher 'ECDHE-RSA-AES128-GCM-SHA256'
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2 -cipher 'ECDHE-RSA-AES128-GCM-SHA256'
 ```
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2 \
--cipher 'ECDHE-RSA-AES256-GCM-SHA384'
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2 -cipher 'ECDHE-RSA-AES256-GCM-SHA384'
 ```
 
 Prueba adicional:
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2 \
--cipher 'AES128-GCM-SHA256'
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2 -cipher 'AES128-GCM-SHA256'
 ```
 
 Si funciona, OpenSSL mostrará un cipher negociado. Si es rechazado,
@@ -146,19 +124,13 @@ negociado.
 TLS 1.2:
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2
 ```
 
 Si OpenSSL soporta TLS 1.3:
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_3
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_3
 ```
 
 Registrar:
@@ -173,13 +145,11 @@ TLS 1.3 -> OK / FAIL
 Sólo recoger la configuración; no modificarla:
 
 ``` bash
-grep -A5 '^jdk.tls.disabledAlgorithms' \
-$JAVA_HOME/conf/security/java.security
+grep -A5 '^jdk.tls.disabledAlgorithms' $JAVA_HOME/conf/security/java.security
 ```
 
 ``` bash
-grep -A5 '^jdk.certpath.disabledAlgorithms' \
-$JAVA_HOME/conf/security/java.security
+grep -A5 '^jdk.certpath.disabledAlgorithms' $JAVA_HOME/conf/security/java.security
 ```
 
 No deshabilitar `jdk.tls.disabledAlgorithms` ni habilitar algoritmos
@@ -212,10 +182,7 @@ secweb-stest3.dev.echonet
 Si:
 
 ``` bash
-openssl s_client \
--connect secweb-stest3.dev.echonet:443 \
--servername secweb-stest3.dev.echonet \
--tls1_2
+openssl s_client -connect secweb-stest3.dev.echonet:443 -servername secweb-stest3.dev.echonet -tls1_2
 ```
 
 también devuelve `handshake failure`, el fallo queda reproducido sin
